@@ -6,8 +6,11 @@ import random
 from datetime import datetime
 import os
 
-# 🔐 TOKEN do bot
-TOKEN = os.environ.get('BOT_TOKEN')  # 🎯 SEGURO!
+# 🔐 TOKEN do bot via variável de ambiente
+TOKEN = os.environ.get('BOT_TOKEN')
+if not TOKEN:
+    raise ValueError("❌ BOT_TOKEN não configurado!")
+
 FORM_LINK = "https://docs.google.com/forms/d/e/1FAIpQLSf5nxopZF91zBWo7mFsHkpHSKhXvOcez-M0A96fc03JlPjgdQ/viewform?usp=header"
 
 # 👇 LISTA DE ADMINS 
@@ -327,5 +330,4 @@ try:
 except Exception as e:
     print(f"🔴 Erro: {e}")
     print("🔄 Reiniciando em 10 segundos...")
-
     time.sleep(10)
