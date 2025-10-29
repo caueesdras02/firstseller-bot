@@ -5,6 +5,7 @@ import time
 import random
 from datetime import datetime
 import os
+import sqlite3  # ✅ ADICIONADO
 
 # 🔐 TOKEN do bot via variável de ambiente
 TOKEN = os.environ.get('BOT_TOKEN')
@@ -32,26 +33,91 @@ atendentes = [
     }
 ]
 
-# DASHBOARD PREMIUM - estatísticas em tempo real (APENAS ADMINS)
+# DASHBOARD COM BANCO DE DADOS PERSISTENTE - ✅ SUBSTITUÍDO
 class BotDashboard:
     def __init__(self):
+        self.setup_database()
+        self.load_current_stats()
+    
+    def setup_database(self):
+        """Cria o banco de dados se não existir"""
+        conn = sqlite3.connect('bot_stats.db')
+        c = conn.cursor()
+        
+        # Tabela para estatísticas totais
+        c.execute('''CREATE TABLE IF NOT EXISTS total_stats
+                     (id INTEGER PRIMARY KEY, users INTEGER, forms INTEGER, contacts INTEGER)''')
+        
+        # Tabela para estatísticas diárias
+        c.execute('''CREATE TABLE IF NOT EXISTS daily_stats
+                     (date TEXT PRIMARY KEY, users INTEGER, forms INTEGER, contacts INTEGER)''')
+        
+        # Inicializa se estiver vazio
+        c.execute("SELECT * FROM total_stats")
+        if not c.fetchone():
+            c.execute("INSERT INTO total_stats (id, users, forms, contacts) VALUES (1, 0, 0, 0)")
+        
+        conn.commit()
+        conn.close()
+    
+    def load_current_stats(self):
+        """Carrega as estatísticas atuais da memória"""
+        conn = sqlite3.connect('bot_stats.db')
+        c = conn.cursor()
+        
+        c.execute("SELECT users, forms, contacts FROM total_stats WHERE id = 1")
+        result = c.fetchone()
+        
+        if result:
+            self.users_served, self.forms_sent, self.contacts_requested = result
+        else:
+            self.users_served, self.forms_sent, self.contacts_requested = 0, 0, 0
+        
+        conn.close()
+        
+        # Inicializa tempo de sessão
         self.start_time = datetime.now()
-        self.users_served = 0
-        self.forms_sent = 0
-        self.contacts_requested = 0
-        self.hourly_stats = {datetime.now().strftime("%H:%M"): 1}
+        self.hourly_stats = self._load_hourly_stats()
+    
+    def _load_hourly_stats(self):
+        """Carrega estatísticas das últimas horas"""
+        # Para simplificar, vamos usar estatísticas da sessão atual
+        return {datetime.now().strftime("%H:%M"): 1}
     
     def add_user(self):
         self.users_served += 1
+        self._save_stats()
         self._update_hourly_stats()
     
     def add_form(self):
         self.forms_sent += 1
+        self._save_stats()
         self._update_hourly_stats()
     
     def add_contact(self):
         self.contacts_requested += 1
+        self._save_stats()
         self._update_hourly_stats()
+    
+    def _save_stats(self):
+        """Salva as estatísticas no banco de dados"""
+        conn = sqlite3.connect('bot_stats.db')
+        c = conn.cursor()
+        
+        # Atualiza estatísticas totais
+        c.execute('''UPDATE total_stats 
+                     SET users = ?, forms = ?, contacts = ? 
+                     WHERE id = 1''',
+                 (self.users_served, self.forms_sent, self.contacts_requested))
+        
+        # Atualiza estatísticas diárias
+        today = datetime.now().strftime("%Y-%m-%d")
+        c.execute('''INSERT OR REPLACE INTO daily_stats (date, users, forms, contacts)
+                     VALUES (?, ?, ?, ?)''',
+                 (today, self.users_served, self.forms_sent, self.contacts_requested))
+        
+        conn.commit()
+        conn.close()
     
     def _update_hourly_stats(self):
         current_hour = datetime.now().strftime("%H:%M")
@@ -137,10 +203,15 @@ class BotDashboard:
         
         # CONSTRUINDO O DASHBOARD COMPLETO
         dashboard_text = f"""
-🎯 **FIRSTSELLER DASHBOARD PREMIUM** 🎯
+🎯 **FIRSTSELLER DASHBOARD - DADOS PERMANENTES** 🎯
+
+📊 *Estatísticas TOTAIS (desde o início):*
+├─ 👥 Usuários atendidos: {self.users_served}
+├─ 📋 Formulários enviados: {self.forms_sent}  
+├─ 📞 Contatos solicitados: {self.contacts_requested}
+└─ 🎯 Total interações: {total}
 
 ⏰ *Sessão Ativa:* `{int(hours)}h {int(minutes)}m {int(seconds)}s`
-📊 *Total de Interações:* `{total}`
 
 {create_advanced_bar(self.users_served, total, "👥", "Usuários")}
 {create_advanced_bar(self.forms_sent, total, "📋", "Formulários")}
@@ -152,13 +223,14 @@ class BotDashboard:
 
 {create_performance_metrics()}
 
-🟢 **STATUS:** `SISTEMA OPERACIONAL` 
+💾 *Dados salvos permanentemente*
+🟢 **STATUS:** `SISTEMA PERSISTENTE ATIVO` 
 🔄 *Atualizado em tempo real*
         """
         
         return dashboard_text
 
-# Inicializa dashboard
+# Inicializa dashboard PERSISTENTE
 dashboard = BotDashboard()
 
 # Thread para atualizar dashboard
@@ -173,6 +245,8 @@ def dashboard_updater():
 threading.Thread(target=dashboard_updater, daemon=True).start()
 
 print("🤖 Bot FirstSeller iniciado! Pressione Ctrl+C para parar.")
+print("💾 Sistema de banco de dados SQLite ativo!")
+print("📊 Dados persistentes habilitados!")
 
 # Função para verificar se é admin
 def is_admin(user_id):
@@ -320,7 +394,7 @@ def echo_all(message):
 
 print("🟢 Bot rodando com dashboard PREMIUM...")
 print("👑 Cauê e Lucas configurados como ADMINS")
-print("📊 Dashboard visual premium ativo!")
+print("💾 Banco de dados SQLite ativo - Dados PERSISTENTES!")
 print("🎯 Nova abordagem conversacional implementada!")
 print("🚀 Preparado para hospedagem 24/7!")
 
