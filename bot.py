@@ -5,7 +5,7 @@ import time
 import random
 from datetime import datetime
 import os
-import sqlite3  # ✅ ADICIONADO
+import sqlite3
 
 # 🔐 TOKEN do bot via variável de ambiente
 TOKEN = os.environ.get('BOT_TOKEN')
@@ -33,7 +33,7 @@ atendentes = [
     }
 ]
 
-# DASHBOARD COM BANCO DE DADOS PERSISTENTE - ✅ SUBSTITUÍDO
+# DASHBOARD COM BANCO DE DADOS PERSISTENTE
 class BotDashboard:
     def __init__(self):
         self.setup_database()
@@ -44,15 +44,12 @@ class BotDashboard:
         conn = sqlite3.connect('bot_stats.db')
         c = conn.cursor()
         
-        # Tabela para estatísticas totais
         c.execute('''CREATE TABLE IF NOT EXISTS total_stats
                      (id INTEGER PRIMARY KEY, users INTEGER, forms INTEGER, contacts INTEGER)''')
         
-        # Tabela para estatísticas diárias
         c.execute('''CREATE TABLE IF NOT EXISTS daily_stats
                      (date TEXT PRIMARY KEY, users INTEGER, forms INTEGER, contacts INTEGER)''')
         
-        # Inicializa se estiver vazio
         c.execute("SELECT * FROM total_stats")
         if not c.fetchone():
             c.execute("INSERT INTO total_stats (id, users, forms, contacts) VALUES (1, 0, 0, 0)")
@@ -75,13 +72,10 @@ class BotDashboard:
         
         conn.close()
         
-        # Inicializa tempo de sessão
         self.start_time = datetime.now()
         self.hourly_stats = self._load_hourly_stats()
     
     def _load_hourly_stats(self):
-        """Carrega estatísticas das últimas horas"""
-        # Para simplificar, vamos usar estatísticas da sessão atual
         return {datetime.now().strftime("%H:%M"): 1}
     
     def add_user(self):
@@ -104,13 +98,11 @@ class BotDashboard:
         conn = sqlite3.connect('bot_stats.db')
         c = conn.cursor()
         
-        # Atualiza estatísticas totais
         c.execute('''UPDATE total_stats 
                      SET users = ?, forms = ?, contacts = ? 
                      WHERE id = 1''',
                  (self.users_served, self.forms_sent, self.contacts_requested))
         
-        # Atualiza estatísticas diárias
         today = datetime.now().strftime("%Y-%m-%d")
         c.execute('''INSERT OR REPLACE INTO daily_stats (date, users, forms, contacts)
                      VALUES (?, ?, ?, ?)''',
@@ -133,7 +125,6 @@ class BotDashboard:
         
         total = self.users_served + self.forms_sent + self.contacts_requested
         
-        # GRÁFICO DE BARRAS HORIZONTAL AVANÇADO
         def create_advanced_bar(value, total, color_emoji, label):
             if total == 0:
                 bar = "▱▱▱▱▱▱▱▱▱▱"
@@ -145,7 +136,6 @@ class BotDashboard:
             
             return f"{color_emoji} {label}: {bar} {value} ({int(percent)}%)"
         
-        # GRÁFICO DE PIZZA VISUAL
         def create_pizza_chart():
             if total == 0:
                 return """
@@ -172,7 +162,6 @@ class BotDashboard:
 └─────────────┘
             """
         
-        # GRÁFICO DE LINHA (tendência)
         def create_trend_chart():
             if len(self.hourly_stats) < 2:
                 return "📈 *Tendência:* Dados insuficientes"
@@ -188,7 +177,6 @@ class BotDashboard:
             
             return chart
         
-        # MÉTRICAS DE PERFORMANCE
         def create_performance_metrics():
             avg_time = uptime.total_seconds() / max(1, total)
             efficiency = (self.forms_sent / max(1, self.users_served)) * 100
@@ -201,7 +189,6 @@ class BotDashboard:
 └─ 🎯 *Taxa conversão:* {int((self.forms_sent/max(1, self.users_served))*100)}%
             """
         
-        # CONSTRUINDO O DASHBOARD COMPLETO
         dashboard_text = f"""
 🎯 **FIRSTSELLER DASHBOARD - DADOS PERMANENTES** 🎯
 
@@ -237,11 +224,10 @@ dashboard = BotDashboard()
 def dashboard_updater():
     while True:
         try:
-            time.sleep(5)  # Atualiza a cada 5 segundos
+            time.sleep(5)
         except:
             pass
 
-# Inicia thread do dashboard
 threading.Thread(target=dashboard_updater, daemon=True).start()
 
 print("🤖 Bot FirstSeller iniciado! Pressione Ctrl+C para parar.")
@@ -256,13 +242,11 @@ def is_admin(user_id):
 def send_welcome(message):
     dashboard.add_user()
     
-    # TECLADO - Abordagem mais conversacional
     markup = ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
     btn_quote = KeyboardButton('📋 Quero uma cotação')
     btn_contact = KeyboardButton('💬 Falar com atendente')
     btn_info = KeyboardButton('ℹ️ Conhecer serviços')
     
-    # Se for ADMIN, adiciona botão de dashboard
     if is_admin(message.from_user.id):
         btn_stats = KeyboardButton('📊 Dashboard Admin')
         markup.add(btn_quote, btn_contact, btn_info, btn_stats)
@@ -271,7 +255,6 @@ def send_welcome(message):
         markup.add(btn_quote, btn_contact, btn_info)
         print(f"👤 Cliente acessou: {message.from_user.first_name}")
     
-    # MENSAGEM DE BOAS-VINDAS
     welcome_text = """
 👋 *Olá! Que bom te ver aqui!*
 
@@ -297,7 +280,6 @@ Sou especializado em conectar você com as *melhores soluções e fornecedores* 
         reply_markup=markup
     )
 
-# Botão "Quero uma cotação"
 @bot.message_handler(func=lambda message: message.text == '📋 Quero uma cotação')
 def send_form(message):
     dashboard.add_form()
@@ -317,7 +299,6 @@ Para entendermos exatamente o que você precisa e encontrarmos as *melhores opç
     
     bot.send_message(message.chat.id, form_text, parse_mode='Markdown')
 
-# Botão "Conhecer serviços"
 @bot.message_handler(func=lambda message: message.text == 'ℹ️ Conhecer serviços')
 def send_services_info(message):
     services_text = """
@@ -343,12 +324,10 @@ Clique em *"📋 Quero uma cotação"* para começarmos!
     """
     bot.send_message(message.chat.id, services_text, parse_mode='Markdown')
 
-# Botão "Falar com atendente"
 @bot.message_handler(func=lambda message: message.text == '💬 Falar com atendente')
 def send_contact(message):
     dashboard.add_contact()
     
-    # Escolhe atendente aleatório
     atendente = random.choice(atendentes)
     
     contact_info = f"""
@@ -371,7 +350,6 @@ Segunda a Sexta: 8h às 18h
         disable_web_page_preview=True
     )
 
-# 👇 DASHBOARD APENAS PARA ADMINS
 @bot.message_handler(func=lambda message: message.text == '📊 Dashboard Admin')
 def show_dashboard(message):
     if is_admin(message.from_user.id):
@@ -388,6 +366,113 @@ def show_dashboard_command(message):
     else:
         bot.send_message(message.chat.id, "❌ Acesso restrito aos administradores.")
 
+# 👇 COMANDO QUE ZERA TUDO - BOT + PLANILHA + FORMS
+@bot.message_handler(commands=['zerartudo'])
+def reset_everything(message):
+    if is_admin(message.from_user.id):
+        try:
+            # 1. Zera banco de dados do bot
+            conn = sqlite3.connect('bot_stats.db')
+            c = conn.cursor()
+            c.execute("UPDATE total_stats SET users = 0, forms = 0, contacts = 0 WHERE id = 1")
+            c.execute("DELETE FROM daily_stats")
+            conn.commit()
+            conn.close()
+            
+            # 2. Recarrega dashboard
+            global dashboard
+            dashboard = BotDashboard()
+            
+            # 3. Mensagem com GUIA COMPLETO
+            response = """
+✅ *SISTEMA BOT ZERADO COM SUCESSO!* 🎯
+
+📊 *O que foi ZERADO no Bot:*
+├─ 👥 Estatísticas de usuários
+├─ 📋 Contador de formulários  
+├─ 📞 Contador de contatos
+└─ 💾 Banco de dados interno
+
+🔧 *AGORA ZERE MANUALMENTE:*
+
+📝 **PARA ZERAR O GOOGLE FORMS:**
+1️⃣ Acesse: https://docs.google.com/forms
+2️⃣ Clique no seu formulário
+3️⃣ Vá em "RESPOSTAS" (ícone de gráfico)
+4️⃣ Clique em "❌ LIMPAR TODAS AS RESPOSTAS"
+5️⃣ Confirme a exclusão
+
+📊 **PARA ZERAR A PLANILHA:**
+1️⃣ Acesse sua planilha do Google Sheets
+2️⃣ Selecione TODAS as linhas com dados (exceto cabeçalho)
+3️⃣ Botão direito → "Excluir linhas"
+4️⃣ Salve (Ctrl+S)
+
+🎯 *PRONTO! Tudo zerado para nova coleta!*
+
+💡 *Dica:* Compartilhe o bot e acompanhe o dashboard em tempo real!
+            """
+            
+            bot.send_message(message.chat.id, response, parse_mode='Markdown')
+            print("🔄 Sistema bot zerado por admin")
+            
+        except Exception as e:
+            bot.send_message(message.chat.id, f"❌ Erro ao zerar sistema: {e}")
+    else:
+        bot.send_message(message.chat.id, "❌ Acesso restrito aos administradores.")
+
+@bot.message_handler(commands=['testar'])
+def generate_test_data(message):
+    if is_admin(message.from_user.id):
+        for i in range(20):
+            dashboard.add_user()
+        for i in range(15):
+            dashboard.add_form()  
+        for i in range(15):
+            dashboard.add_contact()
+            
+        bot.send_message(message.chat.id, "🧪 *50 interações fake geradas!*\nUse /dashboard para ver os resultados!", parse_mode='Markdown')
+    else:
+        bot.send_message(message.chat.id, "❌ Acesso restrito.")
+
+@bot.message_handler(commands=['guia'])
+def show_guide(message):
+    if is_admin(message.from_user.id):
+        guide_text = """
+📖 **GUIA COMPLETO DO ADMIN** 🎯
+
+🔧 *COMANDOS DISPONÍVEIS:*
+├─ /start - Iniciar bot
+├─ /dashboard - Ver estatísticas  
+├─ /zerartudo - Zerar TUDO (bot + forms + planilha)
+├─ /testar - Gerar dados fake
+└─ /guia - Ver este guia
+
+🗂️ *COMO GERENCIAR DADOS:*
+
+📝 **REMOVER RESPOSTA DO FORMS:**
+1. Acesse seu Forms
+2. Vá em "Respostas" 
+3. Encontre a resposta → Delete individual
+
+📊 **REMOVER LINHA DA PLANILHA:**
+1. Acesse sua Sheets
+2. Clique no número da linha
+3. Botão direito → "Excluir linha"
+
+🔄 **ZERAR TUDO (Forms + Planilha):**
+1. Use /zerartudo no bot
+2. Siga as instruções que aparecerem
+
+🎯 *Dica para Apresentação:*
+- Use /zerartudo antes de começar
+- Compartilhe o bot com a plateia  
+- Mostre o dashboard em tempo real!
+        """
+        bot.send_message(message.chat.id, guide_text, parse_mode='Markdown')
+    else:
+        bot.send_message(message.chat.id, "❌ Acesso restrito.")
+
 @bot.message_handler(func=lambda message: True)
 def echo_all(message):
     bot.reply_to(message, "🤖 Digite /start para ver as opções!")
@@ -395,10 +480,9 @@ def echo_all(message):
 print("🟢 Bot rodando com dashboard PREMIUM...")
 print("👑 Cauê e Lucas configurados como ADMINS")
 print("💾 Banco de dados SQLite ativo - Dados PERSISTENTES!")
-print("🎯 Nova abordagem conversacional implementada!")
+print("🎯 Comandos secretos ativos: /zerartudo, /testar, /guia")
 print("🚀 Preparado para hospedagem 24/7!")
 
-# Configuração otimizada para hospedagem
 try:
     bot.infinity_polling()
 except Exception as e:
