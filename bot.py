@@ -1,10 +1,13 @@
 import telebot
-from telebot.types import ReplyKeyboardMarkup, KeyboardButton
+from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 import threading
 import time
 import random
 from datetime import datetime
 import os
+import sqlite3
+import json
+from flask import Flask
 
 # 🔐 TOKEN do bot
 TOKEN = os.getenv('TELEGRAM_TOKEN', '8133950557:AAFdiOrBBoKnZEf4XbxnMC3c9HGJ7jBWQd0')
@@ -13,42 +16,165 @@ FORM_LINK = "https://docs.google.com/forms/d/e/1FAIpQLSf5nxopZF91zBWo7mFsHkpHSKh
 # 👇 LISTA DE ADMINS 
 ADMIN_IDS = [5932207916, 1858780722]  # 👈 Cauê e Lucas como ADMIN
 
-bot = telebot.TeleBot(TOKEN)
-
-# LISTA DE ATENDENTES
+# 👥 ATENDENTES COM USERNAME DO TELEGRAM
 atendentes = [
     {
         "nome": "Cauê",
-        "telefone": "+55 81 98903-6646",
-        "whatsapp": "https://wa.me/5581989036646"
+        "username": "@caueesdras",  # 👈 SEU USERNAME AQUI
+        "user_id": 5932207916
     },
     {
         "nome": "Lucas", 
-        "telefone": "+55 11 99999-9999", 
-        "whatsapp": "https://wa.me/5511999999999"
+        "username": "@lucasusername",  # 👈 USERNAME DO LUCAS AQUI
+        "user_id": 1858780722
     }
 ]
 
-# DASHBOARD PREMIUM - estatísticas em tempo real (APENAS ADMINS)
+bot = telebot.TeleBot(TOKEN)
+
+# SERVIDOR WEB PARA O RENDER
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return '🤖 FirstSeller Bot is running!'
+
+def run_web_server():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
+
+# Inicia servidor web em thread separada
+threading.Thread(target=run_web_server, daemon=True).start()
+
+# BANCO DE DADOS SQLite
+class Database:
+    def __init__(self):
+        self.conn = sqlite3.connect('bot_data.db', check_same_thread=False)
+        self.create_tables()
+    
+    def create_tables(self):
+        cursor = self.conn.cursor()
+        
+        # Tabela de estatísticas
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS bot_stats (
+                id INTEGER PRIMARY KEY,
+                start_time TEXT,
+                users_served INTEGER,
+                forms_sent INTEGER,
+                contacts_requested INTEGER,
+                hourly_stats TEXT
+            )
+        ''')
+        
+        # Tabela de usuários (para histórico completo)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                user_id INTEGER PRIMARY KEY,
+                username TEXT,
+                first_name TEXT,
+                last_name TEXT,
+                first_seen TEXT,
+                last_seen TEXT,
+                message_count INTEGER
+            )
+        ''')
+        
+        self.conn.commit()
+    
+    def load_stats(self):
+        cursor = self.conn.cursor()
+        cursor.execute('SELECT * FROM bot_stats WHERE id = 1')
+        result = cursor.fetchone()
+        
+        if result:
+            return {
+                'start_time': datetime.fromisoformat(result[1]),
+                'users_served': result[2],
+                'forms_sent': result[3],
+                'contacts_requested': result[4],
+                'hourly_stats': json.loads(result[5]) if result[5] else {}
+            }
+        else:
+            # Primeira execução
+            default_stats = {
+                'start_time': datetime.now(),
+                'users_served': 0,
+                'forms_sent': 0,
+                'contacts_requested': 0,
+                'hourly_stats': {}
+            }
+            self.save_stats(default_stats)
+            return default_stats
+    
+    def save_stats(self, stats):
+        cursor = self.conn.cursor()
+        cursor.execute('''
+            INSERT OR REPLACE INTO bot_stats 
+            (id, start_time, users_served, forms_sent, contacts_requested, hourly_stats)
+            VALUES (1, ?, ?, ?, ?, ?)
+        ''', (
+            stats['start_time'].isoformat(),
+            stats['users_served'],
+            stats['forms_sent'],
+            stats['contacts_requested'],
+            json.dumps(stats['hourly_stats'])
+        ))
+        self.conn.commit()
+    
+    def save_user(self, user_id, username, first_name, last_name):
+        cursor = self.conn.cursor()
+        now = datetime.now().isoformat()
+        
+        cursor.execute('''
+            INSERT OR REPLACE INTO users 
+            (user_id, username, first_name, last_name, first_seen, last_seen, message_count)
+            VALUES (?, ?, ?, ?, COALESCE((SELECT first_seen FROM users WHERE user_id = ?), ?), ?, 
+                   COALESCE((SELECT message_count FROM users WHERE user_id = ?), 0) + 1)
+        ''', (user_id, username, first_name, last_name, user_id, now, now, user_id))
+        
+        self.conn.commit()
+
+# DASHBOARD PREMIUM COM SQLite
 class BotDashboard:
     def __init__(self):
-        self.start_time = datetime.now()
-        self.users_served = 0
-        self.forms_sent = 0
-        self.contacts_requested = 0
-        self.hourly_stats = {datetime.now().strftime("%H:%M"): 1}
+        self.db = Database()
+        self.load_stats()
     
-    def add_user(self):
+    def load_stats(self):
+        stats = self.db.load_stats()
+        self.start_time = stats['start_time']
+        self.users_served = stats['users_served']
+        self.forms_sent = stats['forms_sent']
+        self.contacts_requested = stats['contacts_requested']
+        self.hourly_stats = stats['hourly_stats']
+        print("📊 Estatísticas carregadas do SQLite!")
+    
+    def save_stats(self):
+        stats = {
+            'start_time': self.start_time,
+            'users_served': self.users_served,
+            'forms_sent': self.forms_sent,
+            'contacts_requested': self.contacts_requested,
+            'hourly_stats': self.hourly_stats
+        }
+        self.db.save_stats(stats)
+    
+    def add_user(self, user_id, username, first_name, last_name):
         self.users_served += 1
+        self.db.save_user(user_id, username, first_name, last_name)
         self._update_hourly_stats()
+        self.save_stats()
     
     def add_form(self):
         self.forms_sent += 1
         self._update_hourly_stats()
+        self.save_stats()
     
     def add_contact(self):
         self.contacts_requested += 1
         self._update_hourly_stats()
+        self.save_stats()
     
     def _update_hourly_stats(self):
         current_hour = datetime.now().strftime("%H:%M")
@@ -119,22 +245,10 @@ class BotDashboard:
             
             return chart
         
-        # MÉTRICAS DE PERFORMANCE
-        def create_performance_metrics():
-            avg_time = uptime.total_seconds() / max(1, total)
-            efficiency = (self.forms_sent / max(1, self.users_served)) * 100
-            
-            return f"""
-⚡ *MÉTRICAS DE PERFORMANCE:*
-├─ 🚀 *Eficiência:* {int(efficiency)}%
-├─ ⏱️ *Tempo médio/action:* {int(avg_time)}s
-├─ 📦 *Total ações:* {total}
-└─ 🎯 *Taxa conversão:* {int((self.forms_sent/max(1, self.users_served))*100)}%
-            """
-        
         # CONSTRUINDO O DASHBOARD COMPLETO
         dashboard_text = f"""
 🎯 **FIRSTSELLER DASHBOARD PREMIUM** 🎯
+💾 *Dados salvos em SQLite*
 
 ⏰ *Sessão Ativa:* `{int(hours)}h {int(minutes)}m {int(seconds)}s`
 📊 *Total de Interações:* `{total}`
@@ -147,29 +261,17 @@ class BotDashboard:
 
 {create_trend_chart()}
 
-{create_performance_metrics()}
-
-🟢 **STATUS:** `SISTEMA OPERACIONAL` 
-🔄 *Atualizado em tempo real*
+🟢 **STATUS:** `SISTEMA OPERACIONAL + SQLite` 
+🔄 *Dados permanentes - Não perde ao reiniciar*
+💽 *Arquivo: bot_data.db*
         """
         
         return dashboard_text
 
-# Inicializa dashboard
+# Inicializa dashboard COM SQLite
 dashboard = BotDashboard()
 
-# Thread para atualizar dashboard
-def dashboard_updater():
-    while True:
-        try:
-            time.sleep(5)  # Atualiza a cada 5 segundos
-        except:
-            pass
-
-# Inicia thread do dashboard
-threading.Thread(target=dashboard_updater, daemon=True).start()
-
-print("🤖 Bot FirstSeller iniciado! Pressione Ctrl+C para parar.")
+print("🤖 Bot FirstSeller iniciado com SQLite! Pressione Ctrl+C para parar.")
 
 # Função para verificar se é admin
 def is_admin(user_id):
@@ -177,7 +279,8 @@ def is_admin(user_id):
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    dashboard.add_user()
+    user = message.from_user
+    dashboard.add_user(user.id, user.username, user.first_name, user.last_name)
     
     # TECLADO - Abordagem mais conversacional
     markup = ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
@@ -186,13 +289,13 @@ def send_welcome(message):
     btn_info = KeyboardButton('ℹ️ Conhecer serviços')
     
     # Se for ADMIN, adiciona botão de dashboard
-    if is_admin(message.from_user.id):
+    if is_admin(user.id):
         btn_stats = KeyboardButton('📊 Dashboard Admin')
         markup.add(btn_quote, btn_contact, btn_info, btn_stats)
-        print(f"✅ Admin acessou: {message.from_user.first_name}")
+        print(f"✅ Admin acessou: {user.first_name}")
     else:
         markup.add(btn_quote, btn_contact, btn_info)
-        print(f"👤 Cliente acessou: {message.from_user.first_name}")
+        print(f"👤 Cliente acessou: {user.first_name}")
     
     # MENSAGEM DE BOAS-VINDAS
     welcome_text = """
@@ -266,7 +369,7 @@ Clique em *"📋 Quero uma cotação"* para começarmos!
     """
     bot.send_message(message.chat.id, services_text, parse_mode='Markdown')
 
-# Botão "Falar com atendente"
+# Botão "Falar com atendente" - AGORA COM LINK DIRETO
 @bot.message_handler(func=lambda message: message.text == '💬 Falar com atendente')
 def send_contact(message):
     dashboard.add_contact()
@@ -274,24 +377,28 @@ def send_contact(message):
     # Escolhe atendente aleatório
     atendente = random.choice(atendentes)
     
+    # Teclado inline para abrir conversa direta
+    markup = InlineKeyboardMarkup()
+    btn_chat = InlineKeyboardButton(
+        f"💬 Conversar com {atendente['nome']}", 
+        url=f"https://t.me/{atendente['username'].replace('@', '')}"
+    )
+    markup.add(btn_chat)
+    
     contact_info = f"""
-📞 *Fale com nosso atendente:*
+📞 *Conectando você com nosso atendente...*
 
 👨‍💼 *Atendente:* {atendente['nome']}
-📱 *Telefone:* {atendente['telefone']}
-💬 *WhatsApp:* [Clique aqui]({atendente['whatsapp']})
+⭐ *Escolhido aleatoriamente para melhor atendimento!*
 
-⏰ *Horário de atendimento:*
-Segunda a Sexta: 8h às 18h
-
-✨ *Escolhido aleatoriamente para melhor atendimento!*
+Clique no botão abaixo para iniciar uma conversa direta no Telegram:
     """
     
     bot.send_message(
         message.chat.id, 
         contact_info, 
         parse_mode='Markdown',
-        disable_web_page_preview=True
+        reply_markup=markup
     )
 
 # 👇 DASHBOARD APENAS PARA ADMINS
@@ -315,11 +422,12 @@ def show_dashboard_command(message):
 def echo_all(message):
     bot.reply_to(message, "🤖 Digite /start para ver as opções!")
 
-print("🟢 Bot rodando com dashboard PREMIUM...")
+print("🟢 Bot rodando com SQLite!")
+print("💾 Dados sendo salvos permanentemente em bot_data.db!")
+print("🌐 Servidor web ativo na porta 10000!")
 print("👑 Cauê e Lucas configurados como ADMINS")
-print("📊 Dashboard visual premium ativo!")
-print("🎯 Nova abordagem conversacional implementada!")
-print("🚀 Preparado para hospedagem 24/7!")
+print("💬 Atendimento direto no Telegram implementado!")
+print("🚀 Preparado para hospedagem 24/7 com dados persistentes!")
 
 # Configuração otimizada para hospedagem
 try:
