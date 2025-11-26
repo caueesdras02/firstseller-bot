@@ -20,12 +20,12 @@ ADMIN_IDS = [5932207916, 1858780722]  # 👈 Cauê e Lucas como ADMIN
 atendentes = [
     {
         "nome": "Cauê",
-        "username": "@caueesdras",  # 👈 SEU USERNAME AQUI
+        "username": "@cauefirstseller",  # 👈 SEU USERNAME AQUI
         "user_id": 5932207916
     },
     {
         "nome": "Lucas", 
-        "username": "@lucasusername",  # 👈 USERNAME DO LUCAS AQUI
+        "username": "@lucasfirstseller",  # 👈 USERNAME DO LUCAS AQUI
         "user_id": 1858780722
     }
 ]
@@ -436,3 +436,4 @@ except Exception as e:
     print(f"🔴 Erro: {e}")
     print("🔄 Reiniciando em 10 segundos...")
     time.sleep(10)
+
